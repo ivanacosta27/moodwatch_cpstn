@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/session_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Camera preview -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:keepScreenOn="true"
+        app:implementationMode="performance"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Emotion text (top-left) -->
+    <TextView
+        android:id="@+id/tvEmotion"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Emotion: —"
+        android:textStyle="bold"
+        android:textSize="22sp"
+        android:padding="12dp"
+        android:layout_margin="16dp"
+        android:background="@android:color/transparent"
+        android:textColor="@android:color/white"
+        android:elevation="6dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- Switch camera (floating button) -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/btnSwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:contentDescription="@string/switch_camera"
+        app:srcCompat="@drawable/baseline_cameraswitch_24_foreground"
+        app:tint="@android:color/white"
+        android:layout_margin="16dp"
+        app:layout_constraintBottom_toTopOf="@+id/bottomButtonGroup"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="1.0"/>
+
+    <!-- Bottom button group -->
+    <LinearLayout
+        android:id="@+id/bottomButtonGroup"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_margin="16dp"
+        android:weightSum="3"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEnrollCounselor"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Enroll Counselor (5s)" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEnd"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="End Session" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEnrollStudent"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Enroll Student (5s)" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

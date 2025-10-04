@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "510015662336",
+    "project_id": "moodwatch-595fb",
+    "storage_bucket": "moodwatch-595fb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:510015662336:android:9f3215cb963327cc4c6be5",
+        "android_client_info": {
+          "package_name": "com.example.moodwatch"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQPQBqPosyPPiFPCuIB1u6N7-i1TbCb8E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
