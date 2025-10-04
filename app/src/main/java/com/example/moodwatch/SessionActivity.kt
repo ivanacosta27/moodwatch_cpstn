@@ -82,8 +82,6 @@ class SessionActivity : AppCompatActivity() {
                 Toast.makeText(this, "Microphone permission not granted", Toast.LENGTH_SHORT).show()
                 return@registerForActivityResult
             }
-
-            @SuppressLint("MissingPermission") // we've just checked RECORD_AUDIO
             initAndStartVosk()
         }
 
@@ -125,7 +123,6 @@ class SessionActivity : AppCompatActivity() {
                 this, Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED
             if (micGranted) {
-                @SuppressLint("MissingPermission")
                 initAndStartVosk()
             } else {
                 // Shouldn't happen if needs.isEmpty(), but keep safe guard
@@ -210,7 +207,6 @@ class SessionActivity : AppCompatActivity() {
                 }
 
                 try {
-                    @SuppressLint("MissingPermission") // permission checked above
                     stt.start()
                 } catch (se: SecurityException) {
                     Log.e("SessionActivity", "Mic start denied", se)
@@ -301,7 +297,6 @@ class SessionActivity : AppCompatActivity() {
 
             try {
                 provider.unbindAll()
-                @SuppressLint("MissingPermission") // we checked CAMERA above
                 run {
                     provider.bindToLifecycle(this, cameraSelector, preview, analyzer)
                 }
