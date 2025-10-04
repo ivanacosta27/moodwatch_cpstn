@@ -1,6 +1,7 @@
 package com.example.moodwatch
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
@@ -8,6 +9,7 @@ import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -28,7 +30,6 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import androidx.annotation.RequiresPermission
 
 class SessionActivity : AppCompatActivity() {
 
@@ -55,24 +56,35 @@ class SessionActivity : AppCompatActivity() {
     private val sessionId: String = UUID.randomUUID().toString()
     private val startedAt: Timestamp = Timestamp.now()
 
-    // ---------- Permissions ----------
+    // ---------- Permissions launcher (Option A call-site check) ----------
     private val requestPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
             val cam = results[Manifest.permission.CAMERA] == true
             val mic = results[Manifest.permission.RECORD_AUDIO] == true
-            if (cam) {
-                startCamera()
-            } else {
+
+            if (!cam) {
                 Toast.makeText(this, "Camera permission required", Toast.LENGTH_SHORT).show()
-                finish()
+                finish(); return@registerForActivityResult
+            }
+            if (!mic) {
+                Toast.makeText(this, "Microphone permission required", Toast.LENGTH_SHORT).show()
+                finish(); return@registerForActivityResult
+            }
+
+            // Both granted:
+            startCamera()
+
+            // Re-check mic permission right here to satisfy Lint & runtime safety
+            val micGranted = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!micGranted) {
+                Toast.makeText(this, "Microphone permission not granted", Toast.LENGTH_SHORT).show()
                 return@registerForActivityResult
             }
-            if (mic) {
-                initAndStartVosk()
-            } else {
-                Toast.makeText(this, "Microphone permission required", Toast.LENGTH_SHORT).show()
-                finish()
-            }
+
+            @SuppressLint("MissingPermission") // we've just checked RECORD_AUDIO
+            initAndStartVosk()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -108,54 +120,85 @@ class SessionActivity : AppCompatActivity() {
 
         if (needs.isEmpty()) {
             startCamera()
-            initAndStartVosk()
+
+            val micGranted = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+            if (micGranted) {
+                @SuppressLint("MissingPermission")
+                initAndStartVosk()
+            } else {
+                // Shouldn't happen if needs.isEmpty(), but keep safe guard
+                requestPermissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+            }
         } else {
             requestPermissions.launch(needs.toTypedArray())
         }
     }
 
-    // ========= Vosk init/start =========
+    // ========= Vosk install + init + start =========
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     private fun initAndStartVosk() {
-        // unzip models from assets → filesDir/vosk/...
-        val base = File(filesDir, "vosk")
-        val asrDir = File(base, "vosk-model-small-en-us-0.15") // change if you use another language
-        val spkDir = File(base, "vosk-model-spk-0.4")
+        lifecycleScope.launch(Dispatchers.IO) {
+            // 1) Install/download models on first run
+            try {
+                ModelInstaller.ensureAllModels(
+                    context = this@SessionActivity,
+                    progress = object : ModelInstaller.Progress {
+                        override fun onProgress(model: String, bytes: Long, total: Long) {
+                            // Optional: update a progress UI here with runOnUiThread { ... }
+                            if (total > 0) {
+                                val pct = (bytes * 100 / total).toInt()
+                                Log.d("ModelDL", "$model: $pct%")
+                            } else {
+                                Log.d("ModelDL", "$model: $bytes bytes")
+                            }
+                        }
+                        override fun onMessage(msg: String) { Log.d("ModelDL", msg) }
+                    }
+                )
+            } catch (t: Throwable) {
+                Log.e("SessionActivity", "Model install failed", t)
+                runOnUiThread {
+                    Toast.makeText(
+                        this@SessionActivity,
+                        "Model install failed: ${t.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    finish()
+                }
+                return@launch
+            }
 
-        try {
-            Assets.ensureUnzipped(this, "models/vosk-model-small-en-us-0.15.zip", asrDir)
-            Assets.ensureUnzipped(this, "models/vosk-model-spk-0.4.zip", spkDir)
-        } catch (t: Throwable) {
-            Toast.makeText(this, "Model unzip failed: ${t.message}", Toast.LENGTH_LONG).show()
-            Log.e("SessionActivity", "Model unzip failed", t)
-            finish(); return
-        }
+            // 2) Paths after install
+            val base = File(filesDir, "vosk")
+            val asrDir = File(base, ModelConfig.ASR_FOLDER)
+            val spkDir = File(base, ModelConfig.SPK_FOLDER)
 
-        stt = VoskStt(
-            onPartial = { /* optional live captions */ },
-            onFinal = { pkt ->
-                when (enrolling) {
-                    "counselor" -> pkt.spk?.let { enrollCounselor += it }
-                    "student"   -> pkt.spk?.let { enrollStudent   += it }
-                    else -> {
-                        val who = spk.label(pkt.spk) // "counselor" | "student" | "unknown"
-                        val emotion = if (who == "student") currentEmotion() else null
-                        appendTranscriptLine(pkt.text, who, emotion)
+            // 3) Build recognizer
+            stt = VoskStt(
+                onPartial = { /* optional live captions */ },
+                onFinal = { pkt ->
+                    when (enrolling) {
+                        "counselor" -> pkt.spk?.let { enrollCounselor += it }
+                        "student"   -> pkt.spk?.let { enrollStudent   += it }
+                        else -> {
+                            val who = spk.label(pkt.spk) // "counselor" | "student" | "unknown"
+                            val emotion = if (who == "student") currentEmotion() else null
+                            appendTranscriptLine(pkt.text, who, emotion)
+                        }
                     }
                 }
-            }
-        )
+            )
 
-        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 stt.init(asrDir.absolutePath, spkDir.absolutePath)
 
-                // Explicit mic-permission check before opening the mic
-                val granted = ContextCompat.checkSelfPermission(
-                    this@SessionActivity,
-                    Manifest.permission.RECORD_AUDIO
+                // Double-check mic permission before opening mic (extra safety)
+                val micGranted = ContextCompat.checkSelfPermission(
+                    this@SessionActivity, Manifest.permission.RECORD_AUDIO
                 ) == PackageManager.PERMISSION_GRANTED
-                if (!granted) {
+                if (!micGranted) {
                     runOnUiThread {
                         Toast.makeText(
                             this@SessionActivity,
@@ -167,6 +210,7 @@ class SessionActivity : AppCompatActivity() {
                 }
 
                 try {
+                    @SuppressLint("MissingPermission") // permission checked above
                     stt.start()
                 } catch (se: SecurityException) {
                     Log.e("SessionActivity", "Mic start denied", se)
@@ -219,11 +263,16 @@ class SessionActivity : AppCompatActivity() {
             binding.btnEnrollCounselor.isEnabled = true
             binding.btnEnrollStudent.isEnabled = true
             Toast.makeText(this, "Enrollment finished for $who", Toast.LENGTH_SHORT).show()
-        }, 5_000) // ~5 seconds
+        }, 5_000)
     }
 
     // ========= Camera / emotion =========
     private fun startCamera() {
+        val hasCam = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasCam) return
+
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             val provider = providerFuture.get()
@@ -252,8 +301,15 @@ class SessionActivity : AppCompatActivity() {
 
             try {
                 provider.unbindAll()
-                provider.bindToLifecycle(this, cameraSelector, preview, analyzer)
+                @SuppressLint("MissingPermission") // we checked CAMERA above
+                run {
+                    provider.bindToLifecycle(this, cameraSelector, preview, analyzer)
+                }
                 Log.d("SessionActivity", "Camera started. lensFacing=$lensFacing")
+            } catch (se: SecurityException) {
+                Log.e("SessionActivity", "Camera security exception", se)
+                Toast.makeText(this, "Camera permission denied", Toast.LENGTH_LONG).show()
+                finish()
             } catch (e: Exception) {
                 Log.e("SessionActivity", "Camera binding failed", e)
                 Toast.makeText(this, "Camera failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -298,7 +354,6 @@ class SessionActivity : AppCompatActivity() {
     // ========= Firestore save =========
     private fun saveTranscriptToFirestore(onDone: () -> Unit, onError: () -> Unit) {
         try { stt.stop() } catch (_: Exception) {}
-
         val payload = hashMapOf(
             "sessionId" to sessionId,
             "studentId" to studentId,
@@ -306,7 +361,6 @@ class SessionActivity : AppCompatActivity() {
             "endedAt" to Timestamp.now(),
             "lines" to transcriptLines
         )
-
         Firebase.firestore
             .collection("student").document(studentId)
             .collection("session").document(sessionId)
@@ -321,6 +375,6 @@ class SessionActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         try { stt.stop() } catch (_: Exception) {}
-        cameraExecutor.shutdown()
+        if (::cameraExecutor.isInitialized) cameraExecutor.shutdown()
     }
 }
